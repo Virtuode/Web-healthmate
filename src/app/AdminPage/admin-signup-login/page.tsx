@@ -14,8 +14,8 @@ export default function AdminSignupLogin() {
   const [adminRole, setAdminRole] = useState("administrator");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [darkMode, setDarkMode] = useState(false); // Kept but unused for now
+  const [twoFactorCode, setTwoFactorCode] = useState(""); // Kept but unused for now
   const router = useRouter();
 
   useEffect(() => {
@@ -65,58 +65,77 @@ export default function AdminSignupLogin() {
   };
 
   const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+    hidden: { opacity: 0, scale: 0.95 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      transition: { duration: 0.8, ease: "easeOut" },
+    },
   };
 
   const buttonVariants = {
-    hover: { scale: 1.05 },
+    hover: { scale: 1.05, boxShadow: "0 0 15px rgba(99, 102, 241, 0.5)" },
     tap: { scale: 0.95 },
   };
 
   return (
     <motion.div
-      className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4"
+      className="min-h-screen w-full bg-gradient-to-tr from-gray-900 via-indigo-900 to-purple-900 flex items-center justify-center p-8 relative overflow-hidden"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
     >
-      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Admin {isLogin ? "Login" : "Signup"}
-          </h1>
-          
-            
-          
-        </div>
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(99,_102,_241,_0.2)_0%,_rgba(0,_0,_0,_0.8)_100%)] pointer-events-none" />
+      <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl animate-pulse delay-1000" />
 
-        <div className="flex gap-4 mb-6">
-          <button
+      <div className="max-w-lg w-full bg-gray-800/40 backdrop-blur-xl shadow-2xl rounded-3xl border border-gray-700/50 p-8">
+        {/* Header */}
+        <motion.h1
+          className="text-3xl font-extrabold text-center mb-6 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.6 }}
+        >
+          Admin {isLogin ? "Access" : "Initiation"}
+        </motion.h1>
+
+        {/* Tabs */}
+        <div className="flex justify-center mb-8 bg-gray-800/50 rounded-full p-1 border border-gray-700/50">
+          <motion.button
             onClick={() => setIsLogin(true)}
-            className={`flex-1 py-2 rounded-lg transition-colors ${
+            className={`flex-1 py-2 px-6 text-sm font-medium rounded-full transition-all duration-300 ${
               isLogin
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg"
+                : "text-gray-400 hover:bg-gray-700/50"
             }`}
+            variants={buttonVariants}
+            whileHover="hover"
+            whileTap="tap"
           >
             Login
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             onClick={() => setIsLogin(false)}
-            className={`flex-1 py-2 rounded-lg transition-colors ${
+            className={`flex-1 py-2 px-6 text-sm font-medium rounded-full transition-all duration-300 ${
               !isLogin
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg"
+                : "text-gray-400 hover:bg-gray-700/50"
             }`}
+            variants={buttonVariants}
+            whileHover="hover"
+            whileTap="tap"
           >
             Signup
-          </button>
+          </motion.button>
         </div>
 
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Email Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
               Admin Email
             </label>
             <input
@@ -125,12 +144,13 @@ export default function AdminSignupLogin() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@domain.com"
               required
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-all"
+              className="w-full px-4 py-3 rounded-lg bg-gray-800/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-700/70"
             />
           </div>
 
+          {/* Password Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
               Password
             </label>
             <div className="relative">
@@ -140,60 +160,59 @@ export default function AdminSignupLogin() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-all"
+                className="w-full px-4 py-3 rounded-lg bg-gray-800/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-700/70"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 bg-transparent focus:outline-none hover:bg-transparent"
+                className="absolute inset-y-0 right-0 flex items-center pr-4 text-gray-400 hover:text-indigo-400 transition-colors"
               >
                 {showPassword ? (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-5 w-5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="black"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                    ) : (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-5 w-5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="black"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                        />
-                      </svg>
-                    )}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                    />
+                  </svg>
+                )}
               </button>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Minimum 8 characters
-            </p>
+            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
           </div>
 
+          {/* Confirm Password (Signup Only) */}
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
                 Confirm Password
               </label>
               <input
@@ -202,20 +221,21 @@ export default function AdminSignupLogin() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-all"
+                className="w-full px-4 py-3 rounded-lg bg-gray-800/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-700/70"
               />
             </div>
           )}
 
+          {/* Admin Role (Signup Only) */}
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
                 Admin Role
               </label>
               <select
                 value={adminRole}
                 onChange={(e) => setAdminRole(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-all"
+                className="w-full px-4 py-3 rounded-lg bg-gray-800/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all hover:bg-gray-700/70"
               >
                 <option value="administrator">Administrator</option>
                 <option value="moderator">Moderator</option>
@@ -224,18 +244,17 @@ export default function AdminSignupLogin() {
             </div>
           )}
 
-          
-
+          {/* Submit Button */}
           <motion.button
             type="submit"
             disabled={loading}
             variants={buttonVariants}
             whileHover="hover"
             whileTap="tap"
-            className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors ${
+            className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-all duration-300 ${
               loading
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-indigo-600 hover:bg-indigo-700"
+                ? "bg-gray-600 cursor-not-allowed"
+                : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg"
             }`}
           >
             {loading ? (
@@ -261,24 +280,25 @@ export default function AdminSignupLogin() {
                 Processing...
               </div>
             ) : isLogin ? (
-              "Login as Admin"
+              "Grant Access"
             ) : (
-              "Create Admin Account"
+              "Deploy Admin"
             )}
           </motion.button>
         </form>
 
-        <div className="mt-6 text-center space-y-2 ">
+        {/* Footer Links */}
+        <div className="mt-6 text-center space-y-2">
           <button
             onClick={() => router.push("/forgot-password")}
-            className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-100 dark:hover:text-indigo-300"
+            className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
           >
             Forgot Password?
           </button>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-gray-400">
             <button
               onClick={() => router.push("/")}
-              className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-100 dark:hover:text-indigo-300"
+              className="text-indigo-400 hover:text-indigo-300 transition-colors"
             >
               Return to User Login
             </button>

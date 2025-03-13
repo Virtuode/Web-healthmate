@@ -4,24 +4,22 @@ import { useEffect, useState } from "react";
 import { auth, db } from "@/firebase";
 import { ref, onValue, update } from "firebase/database";
 import { useRouter } from "next/navigation";
-import { Input } from "@/components/UI/input";
-import { Button } from "@/components/UI/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/UI/card";
-
-interface DoctorData {
-  email: string;
-  phone: string;
-  languages: string;
-  specialization: string;
-  experience: number;
-  biography: string;
-}
+import { motion } from "framer-motion";
 
 export default function ProfilePage() {
   const [doctorData, setDoctorData] = useState<DoctorData | null>(null);
   const [editableData, setEditableData] = useState<DoctorData | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
+
+  interface DoctorData {
+    email: string;
+    phone: string;
+    languages: string;
+    specialization: string;
+    experience: number;
+    biography: string;
+  }
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -63,45 +61,124 @@ export default function ProfilePage() {
   };
 
   if (!editableData) {
-    return <div className="flex items-center justify-center min-h-screen text-lg">Loading...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
   }
 
+  const containerVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
+  };
+
+  const buttonVariants = {
+    hover: { scale: 1.05, boxShadow: "0 0 15px rgba(99, 102, 241, 0.5)" },
+    tap: { scale: 0.95 },
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-6">
-      <Card className="w-full max-w-2xl shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl font-semibold text-center">Profile Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium">Email</label>
-              <Input name="email" value={editableData.email} onChange={handleChange} disabled />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Phone</label>
-              <Input name="phone" value={editableData.phone} onChange={handleChange} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Languages (comma separated)</label>
-              <Input name="languages" value={editableData.languages} onChange={handleChange} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Specialization</label>
-              <Input name="specialization" value={editableData.specialization} onChange={handleChange} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Experience (years)</label>
-              <Input type="number" name="experience" value={editableData.experience} onChange={handleChange} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Biography</label>
-              <textarea name="biography" className="w-full p-2 border rounded" value={editableData.biography} onChange={handleChange} rows={4} />
-            </div>
-            <Button onClick={handleSave} className="w-full mt-4">Save Changes</Button>
+    <motion.div
+      className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 flex items-center justify-center p-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
+      <div className="w-full max-w-2xl bg-gray-800/50 backdrop-blur-md rounded-xl shadow-2xl border border-gray-700/50 p-6">
+        {/* Header */}
+        <motion.h1
+          className="text-3xl font-semibold text-center mb-6 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2, duration: 0.6 }}
+        >
+          Profile Overview
+        </motion.h1>
+
+        {/* Form */}
+        <div className="space-y-6">
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+            <input
+              name="email"
+              value={editableData.email}
+              onChange={handleChange}
+              disabled
+              className="w-full px-4 py-3 rounded-lg bg-gray-900/50 text-gray-400 border border-gray-700/50 outline-none transition-all placeholder-gray-500 cursor-not-allowed"
+            />
           </div>
-        </CardContent>
-      </Card>
-    </div>
+
+          {/* Phone */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Phone</label>
+            <input
+              name="phone"
+              value={editableData.phone}
+              onChange={handleChange}
+              className="w-full px-4 py-3 rounded-lg bg-gray-900/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-900/70"
+            />
+          </div>
+
+          {/* Languages */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Languages (comma separated)</label>
+            <input
+              name="languages"
+              value={editableData.languages}
+              onChange={handleChange}
+              className="w-full px-4 py-3 rounded-lg bg-gray-900/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-900/70"
+            />
+          </div>
+
+          {/* Specialization */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Specialization</label>
+            <input
+              name="specialization"
+              value={editableData.specialization}
+              onChange={handleChange}
+              className="w-full px-4 py-3 rounded-lg bg-gray-900/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-900/70"
+            />
+          </div>
+
+          {/* Experience */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Experience (years)</label>
+            <input
+              type="number"
+              name="experience"
+              value={editableData.experience}
+              onChange={handleChange}
+              className="w-full px-4 py-3 rounded-lg bg-gray-900/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-900/70"
+            />
+          </div>
+
+          {/* Biography */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Biography</label>
+            <textarea
+              name="biography"
+              value={editableData.biography}
+              onChange={handleChange}
+              rows={4}
+              className="w-full px-4 py-3 rounded-lg bg-gray-900/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-gray-500 hover:bg-gray-900/70"
+            />
+          </div>
+
+          {/* Save Button */}
+          <motion.button
+            onClick={handleSave}
+            variants={buttonVariants}
+            whileHover="hover"
+            whileTap="tap"
+            className="w-full py-3 px-4 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold shadow-lg hover:from-indigo-700 hover:to-purple-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition-all duration-300"
+          >
+            Save Changes
+          </motion.button>
+        </div>
+      </div>
+    </motion.div>
   );
 }

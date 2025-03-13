@@ -86,8 +86,8 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
       {isOpen && (
         <>
           {/* Blurred Backdrop */}
-          <div 
-            className="fixed inset-0 bg-gray-800 bg-opacity-50 backdrop-blur-sm z-40 transition-opacity duration-300"
+          <div
+            className="fixed inset-0 bg-gray-800 bg-opacity-50 backdrop-blur-sm z-[998] transition-opacity duration-300"
             onClick={() => {
               setIsOpen(false);
               onClose();
@@ -96,7 +96,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
 
           {/* Chat Container */}
           <div
-            className={`fixed bottom-4 right-4 flex flex-col bg-white dark:bg-gray-900 shadow-2xl rounded-lg overflow-hidden transition-all duration-300 ease-in-out z-50 ${
+            className={`fixed bottom-4 right-4 flex flex-col bg-white dark:bg-gray-900 shadow-2xl rounded-lg overflow-hidden transition-all duration-300 ease-in-out z-[1000] ${
               isMaximized
                 ? "w-[95vw] h-[90vh] md:w-[80vw] lg:w-[70vw]"
                 : "w-[90vw] h-[50vh] md:w-[40vw] lg:w-[30vw]"
@@ -188,7 +188,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-4 right-4 w-12 h-12 flex items-center justify-center bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-all duration-300 transform hover:scale-110 z-50"
+          className="fixed bottom-4 right-4 w-12 h-12 flex items-center justify-center bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-all duration-300 transform hover:scale-110 z-[1001]"
         >
           <FaExpand size={20} />
         </button>
@@ -197,4 +197,4 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
   );
 };
 
-export default ChatComponent
+export default ChatComponent;
