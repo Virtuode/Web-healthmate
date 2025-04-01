@@ -15,9 +15,10 @@ interface ChatComponentProps {
   chatId: string;
   doctorId: string | undefined;
   onClose: () => void;
+  extraContent?: React.ReactNode;
 }
 
-const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose }) => {
+const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose, extraContent }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isMaximized, setIsMaximized] = useState(false);
@@ -35,7 +36,8 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
     });
   }, [chatId, db]);
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (e?: React.KeyboardEvent | React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (newMessage.trim() === "") return;
 
     const messageId = Date.now().toString();
@@ -81,6 +83,28 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
     return prevDate !== currentDate;
   };
 
+  const handleClose = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false);
+    onClose();
+  };
+
+  const handleMaximizeToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsMaximized(!isMaximized);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false);
+    onClose();
+  };
+
+  const handleReopen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(true);
+  };
+
   return (
     <>
       {isOpen && (
@@ -88,10 +112,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
           {/* Blurred Backdrop */}
           <div
             className="fixed inset-0 bg-gray-800 bg-opacity-50 backdrop-blur-sm z-[998] transition-opacity duration-300"
-            onClick={() => {
-              setIsOpen(false);
-              onClose();
-            }}
+            onClick={handleBackdropClick}
           />
 
           {/* Chat Container */}
@@ -101,12 +122,13 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
                 ? "w-[95vw] h-[90vh] md:w-[80vw] lg:w-[70vw]"
                 : "w-[90vw] h-[50vh] md:w-[40vw] lg:w-[30vw]"
             }`}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-3 bg-gray-200 dark:bg-gray-800 rounded-t-lg">
+            <div className="flex items-center justify-between p-3 bg-gray-200 dark:bg-gray-800 rounded-t-lg relative">
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => setIsMaximized(!isMaximized)}
+                  onClick={handleMaximizeToggle}
                   className="text-blue-500 hover:text-blue-700 transition-transform duration-300 transform hover:scale-110 bg-transparent focus:outline-none"
                 >
                   {isMaximized ? <FaCompress size={20} /> : <FaExpand size={20} />}
@@ -114,14 +136,17 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
                 <h2 className="font-semibold text-gray-800 dark:text-gray-100">Chat</h2>
               </div>
               <button
-                onClick={() => {
-                  setIsOpen(false);
-                  onClose();
-                }}
+                onClick={handleClose}
                 className="text-gray-500 hover:text-red-500 transition-all duration-300 transform hover:rotate-90 hover:scale-110 bg-transparent focus:outline-none"
               >
                 <FaTimes size={20} />
               </button>
+              {/* Render extraContent in the header */}
+              {extraContent && (
+                <div className="absolute top-12 left-1/2 transform -translate-x-1/2 w-full flex justify-center">
+                  {extraContent}
+                </div>
+              )}
             </div>
 
             {/* Chat Messages Area */}
@@ -170,7 +195,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage(e)}
                   placeholder="Type a message..."
                   className="flex-1 p-2 rounded-full border dark:border-gray-700 dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
@@ -187,7 +212,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ chatId, doctorId, onClose
       )}
       {!isOpen && (
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={handleReopen}
           className="fixed bottom-4 right-4 w-12 h-12 flex items-center justify-center bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-all duration-300 transform hover:scale-110 z-[1001]"
         >
           <FaExpand size={20} />

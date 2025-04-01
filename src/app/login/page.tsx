@@ -6,6 +6,7 @@ import { auth } from "../../firebase";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { getDatabase, ref, get } from "firebase/database";
 import { motion } from "framer-motion";
+import Image from 'next/image';
 
 export default function Page() {
   const [isLogin, setIsLogin] = useState(true);
