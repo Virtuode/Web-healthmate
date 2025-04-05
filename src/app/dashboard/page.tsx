@@ -1,31 +1,33 @@
+// app/dashboard/page.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
 import { auth } from "../../firebase";
 import { signOut } from "firebase/auth";
-import { getDatabase, ref, onValue, off, push, set, remove, runTransaction } from "firebase/database";
+import { getDatabase, ref, onValue, off, push, set } from "firebase/database";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import dynamic from "next/dynamic";
 import ChatComponent from "@/components/ChatComponent";
 import HamburgerMenu from "@/components/HamburgerMenu";
 import CalendarView from "@/components/CalendarView";
+import dynamic from "next/dynamic";
+
 import { MdEvent, MdAccessTime, MdPhone, MdEmail, MdSearch, MdNotifications, MdEdit, MdCalendarToday, MdAnalytics, MdTask, MdVideoCall, MdClose } from "react-icons/md";
 import { motion } from "framer-motion";
-import { getMessaging, getToken } from "firebase/messaging";
 
-// Dynamically import VideoCallComponent with SSR disabled
-const VideoCallComponent = dynamic(() => import("@/components/UI/VideoCallComponent"), { ssr: false });
+const VideoCallComponent = dynamic(() => import("@/components/UI/VideoCallComponent"), {
+  ssr: false, // Ensures it only loads on the client
+});
 
-// Interfaces
 interface Chat {
   id: string;
-  active: boolean;
+  isActive: boolean;
   appointmentId: string;
-  appointmentTime: string;
+  appointmentTime: string; // "yyyy-MM-dd HH:mm"
+  endTime?: string; // "HH:mm"
   doctorId: string;
-  doctorImageUrl?: string;
-  doctorName?: string;
+  doctorImageUrl: string;
+  doctorName: string;
   lastMessage: string;
   lastMessageTime: number;
   patientId: string;
@@ -46,6 +48,7 @@ interface Appointment {
   endTime: string;
   createdAt?: number;
   consultationType?: string;
+  timestamp?: number; // Added for fallback
 }
 
 interface Patient {
@@ -71,7 +74,6 @@ export default function DoctorDashboard() {
   const [patients, setPatients] = useState<{ [key: string]: Patient }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [chatLoading, setChatLoading] = useState(true);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
@@ -104,7 +106,6 @@ export default function DoctorDashboard() {
       const patientsRef = ref(db, "patients");
       const notificationsRef = ref(db, `notifications/doctors/${user.uid}`);
       const appointmentsRef = ref(db, `doctors/${user.uid}/appointments`);
-      const pendingAppointmentsRef = ref(db, "pendingAppointments");
 
       onValue(doctorRef, (snapshot) => {
         const data = snapshot.val();
@@ -117,123 +118,128 @@ export default function DoctorDashboard() {
         setLoading(false);
       });
 
-      const fetchAppointments = () => {
-        let allAppointments: Appointment[] = [];
-        onValue(appointmentsRef, (snapshot) => {
-          const apptData = snapshot.val();
-          if (apptData) {
-            allAppointments = Object.entries(apptData).map(([id, appt]: [string, any]) => ({
-              id,
-              patientId: appt.patientId,
-              date: appt.date,
-              timeSlot: appt.startTime,
-              status: appt.status,
-              doctorId: appt.doctorId,
-              startTime: appt.startTime,
-              endTime: appt.endTime,
-              createdAt: appt.createdAt ?? Date.now(),
-              consultationType: appt.consultationType,
-            }));
-            filterAndSetAppointments(allAppointments);
-          }
-        });
+      onValue(appointmentsRef, (snapshot) => {
+        const apptData = snapshot.val();
+        if (apptData) {
+          const rawAppts = Object.entries(apptData).map(([id, appt]: [string, any]) => ({
+            id,
+            patientId: appt.patientId,
+            date: appt.date,
+            timeSlot: appt.timeSlot,
+            status: appt.status,
+            doctorId: appt.doctorId,
+            startTime: appt.startTime,
+            endTime: appt.endTime,
+            createdAt: appt.createdAt || Date.now(),
+            consultationType: appt.consultationType,
+            timestamp: appt.timestamp, // Include timestamp for fallback
+          }));
 
-        onValue(pendingAppointmentsRef, (snapshot) => {
-          const pendingData = snapshot.val();
-          if (pendingData) {
-            const pendingAppts = Object.entries(pendingData)
-              .filter(([_, appt]: [string, any]) => appt.doctorId === user.uid)
-              .map(([id, appt]: [string, any]) => ({
-                id,
-                patientId: appt.patientId,
-                date: appt.date,
-                timeSlot: appt.startTime,
-                status: appt.status,
-                doctorId: appt.doctorId,
-                startTime: appt.startTime,
-                endTime: appt.endTime,
-                createdAt: appt.createdAt ?? Date.now(),
-                consultationType: appt.consultationType,
-              }));
-            allAppointments = [...allAppointments.filter(a => !pendingAppts.some(p => p.id === a.id)), ...pendingAppts];
-            filterAndSetAppointments(allAppointments);
-          }
-        });
-      };
+          const filteredAppts = rawAppts.filter((appt) => {
+            let apptDate: Date;
+            try {
+              apptDate = new Date(`${appt.date}T${appt.startTime}:00`);
+              if (isNaN(apptDate.getTime())) {
+                // Fallback to timestamp if date is invalid
+                apptDate = new Date(appt.timestamp || Date.now());
+              }
+            } catch (e) {
+              console.warn(`Invalid date for appointment ${appt.id}: ${appt.date}`, e);
+              apptDate = new Date(appt.timestamp || Date.now()); // Use timestamp as fallback
+            }
+            const currentTime = Date.now();
+            // Show appointments from today onward (past 24 hours included)
+            return apptDate.getTime() > currentTime - 24 * 60 * 60 * 1000;
+          });
 
-      const filterAndSetAppointments = (appts: Appointment[]) => {
-        const now = Date.now();
-        const filteredAppts = appts.map(appt => {
-          const apptDate = new Date(`${appt.date}T${appt.startTime}:00`).getTime();
-          const apptEnd = new Date(`${appt.date}T${appt.endTime}:00`).getTime();
-          if (appt.status === "confirmed" && now >= apptDate && now <= apptEnd) {
-            return { ...appt, status: "ongoing" };
+          const newAppt = rawAppts.find(
+            (appt) =>
+              appt.createdAt > lastSeenTimestamp && !appointments.some((a) => a.id === appt.id)
+          );
+          if (newAppt && patients[newAppt.patientId] && !document.hasFocus()) {
+            const patientName = patients[newAppt.patientId]?.name || "Unknown Patient";
+            const notifMessage = `New appointment with ${patientName} on ${newAppt.date} at ${newAppt.startTime} for ${newAppt.consultationType || "consultation"}`;
+            addNotification(user.uid, notifMessage, "appointment", newAppt.id);
+            setNewAppointmentAlert(notifMessage);
+            setTimeout(() => setNewAppointmentAlert(null), 5000);
+            setLastSeenTimestamp(Date.now());
           }
-          return appt;
-        }).filter(appt => new Date(`${appt.date}T${appt.startTime}:00`).getTime() > now || appt.status === "ongoing");
-
-        const newAppt = filteredAppts.find(
-          (appt) => (appt.createdAt ?? Date.now()) > lastSeenTimestamp && !appointments.some((a) => a.id === appt.id)
-        );
-        if (newAppt && patients[newAppt.patientId] && !document.hasFocus()) {
-          const patientName = patients[newAppt.patientId]?.name || "Unknown Patient";
-          const notifMessage = `New ${newAppt.status} appointment with ${patientName} on ${newAppt.date} at ${newAppt.startTime}`;
-          addNotification(user.uid, notifMessage, "appointment", newAppt.id);
-          setNewAppointmentAlert(notifMessage);
-          setTimeout(() => setNewAppointmentAlert(null), 5000);
-          setLastSeenTimestamp(Date.now());
+          setAppointments(filteredAppts);
+        } else {
+          setAppointments([]); // Ensure empty array if no data
         }
-        setAppointments(filteredAppts);
-      };
-
-      fetchAppointments();
+      });
 
       onValue(chatsRef, (snapshot) => {
         const chatsData = snapshot.val();
         if (chatsData) {
           const doctorChats = Object.values(chatsData)
-            .filter((chat: any) => chat.doctorId === user.uid && chat.active)
+            .filter((chat: any) => chat.doctorId === user.uid)
             .map((chat: any) => ({
-              ...chat,
+              id: chat.id,
+              isActive: chat.isActive ?? false,
+              appointmentId: chat.appointmentId,
+              appointmentTime: chat.appointmentTime,
+              endTime: chat.endTime || appointments.find(a => a.id === chat.appointmentId)?.endTime,
+              doctorId: chat.doctorId,
+              doctorImageUrl: chat.doctorImageUrl,
+              doctorName: chat.doctorName,
+              lastMessage: chat.lastMessage,
+              lastMessageTime: chat.lastMessageTime,
+              patientId: chat.patientId,
               remainingDays: chat.remainingDays ?? 0,
-              status: chat.status ?? "unknown",
+              status: chat.status ?? "pending",
               unreadCount: chat.unreadCount ?? 0,
+              videoCallInitiated: chat.videoCallInitiated ?? false,
             }));
-          setChats(doctorChats.sort((a, b) => {
-            const aOngoing = isOngoing(a.appointmentTime) ? 1 : 0;
-            const bOngoing = isOngoing(b.appointmentTime) ? 1 : 0;
-            return bOngoing - aOngoing || b.unreadCount - a.unreadCount || b.lastMessageTime - a.lastMessageTime;
-          }));
-          setChatLoading(false);
+
+          // Optional: Limit to one chat per patient (uncomment if desired)
+          /*
+          const groupedChats = doctorChats.reduce((acc, chat) => {
+            if (!acc[chat.patientId] || acc[chat.patientId].lastMessageTime < chat.lastMessageTime) {
+              acc[chat.patientId] = chat;
+            }
+            return acc;
+          }, {} as { [key: string]: Chat });
+          setChats(Object.values(groupedChats));
+          */
+          setChats(doctorChats);
         }
       });
 
       onValue(patientsRef, (snapshot) => {
         const patientsData = snapshot.val();
         if (patientsData) {
-          setPatients(Object.entries(patientsData).reduce((acc, [id, patient]: [string, any]) => {
-            acc[id] = {
-              id,
-              name: `${patient.survey?.basicInfo?.firstName || ""} ${patient.survey?.basicInfo?.lastName || ""}`.trim(),
-              contactNumber: patient.survey?.basicInfo?.contactNumber,
-              email: patient.survey?.emergencyContact?.email || "N/A",
-            };
-            return acc;
-          }, {} as { [key: string]: Patient }));
+          const formattedPatients = Object.entries(patientsData).reduce(
+            (acc, [id, patient]: [string, any]) => {
+              acc[id] = {
+                id,
+                name: `${patient.survey?.basicInfo?.firstName || ""} ${
+                  patient.survey?.basicInfo?.middleName || ""
+                } ${patient.survey?.basicInfo?.lastName || ""}`.trim(),
+                contactNumber: patient.survey?.basicInfo?.contactNumber,
+                email: patient.survey?.emergencyContact?.email || "N/A",
+              };
+              return acc;
+            },
+            {} as { [key: string]: Patient }
+          );
+          setPatients(formattedPatients);
         }
       });
 
       onValue(notificationsRef, (snapshot) => {
         const notifData = snapshot.val();
         if (notifData) {
-          setNotifications(Object.entries(notifData).map(([id, notif]: [string, any]) => ({
+          const notifList = Object.entries(notifData).map(([id, notif]: [string, any]) => ({
             id,
             message: notif.message,
             timestamp: notif.timestamp,
             read: notif.read,
             type: notif.type,
             relatedId: notif.relatedId,
-          })));
+          }));
+          setNotifications(notifList);
         }
       });
 
@@ -244,94 +250,41 @@ export default function DoctorDashboard() {
         off(patientsRef);
         off(notificationsRef);
         off(appointmentsRef);
-        off(pendingAppointmentsRef);
-        if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => {
+            track.stop();
+            track.enabled = false;
+          });
+          setMediaStream(null);
+        }
       };
     });
   }, [router]);
 
-  const addNotification = (userId: string, message: string, type: Notification["type"], relatedId?: string) => {
+  const addNotification = (
+    doctorId: string,
+    message: string,
+    type: Notification["type"],
+    relatedId?: string
+  ) => {
     const db = getDatabase();
-    const notifRef = ref(db, `notifications/${userId === auth.currentUser?.uid ? "doctors" : "patients"}/${userId}`);
-    push(notifRef).then(newNotifRef => set(newNotifRef, { message, timestamp: Date.now(), read: false, type, relatedId }));
+    const notifRef = ref(db, `notifications/doctors/${doctorId}`);
+    const newNotifRef = push(notifRef);
+    set(newNotifRef, {
+      message,
+      timestamp: Date.now(),
+      read: false,
+      type,
+      relatedId,
+    });
   };
 
   const markNotificationAsRead = (notifId: string) => {
     const db = getDatabase();
     const notifRef = ref(db, `notifications/doctors/${auth.currentUser?.uid}/${notifId}`);
     const notif = notifications.find((n) => n.id === notifId);
-    if (notif) set(notifRef, { ...notif, read: true });
-  };
-
-  const createChatForAppointment = async (appointment: Appointment) => {
-    const db = getDatabase();
-    const chatRef = ref(db, "chats");
-    const newChatRef = push(chatRef);
-    const chatId = newChatRef.key!;
-    await set(newChatRef, {
-      id: chatId,
-      active: true,
-      appointmentId: appointment.id,
-      appointmentTime: appointment.startTime,
-      doctorId: appointment.doctorId,
-      patientId: appointment.patientId,
-      lastMessage: "",
-      lastMessageTime: Date.now(),
-      unreadCount: 0,
-      videoCallInitiated: false,
-    });
-    return chatId;
-  };
-
-  const handleApproveAppointment = async (appointment: Appointment) => {
-    if (appointment.status !== "pending") return;
-    const db = getDatabase();
-    const doctorApptRef = ref(db, `doctors/${appointment.doctorId}/appointments/${appointment.id}`);
-    const pendingRef = ref(db, `pendingAppointments/${appointment.id}`);
-    const patientApptRef = ref(db, `patients/${appointment.patientId}/appointments/${appointment.id}`);
-
-    try {
-      await runTransaction(doctorApptRef, (current) =>
-        current?.status === "pending" ? { ...appointment, status: "confirmed" } : current
-      );
-      await set(patientApptRef, { ...appointment, status: "confirmed" });
-      await remove(pendingRef);
-      await createChatForAppointment(appointment);
-      setAppointments(prev => prev.map(appt => appt.id === appointment.id ? { ...appt, status: "confirmed" } : appt));
-      const patientName = patients[appointment.patientId]?.name || "Unknown Patient";
-      addNotification(
-        appointment.patientId,
-        `Your appointment with Dr. ${doctorData.name} on ${appointment.date} at ${appointment.startTime} has been confirmed.`,
-        "appointment",
-        appointment.id
-      );
-    } catch (error) {
-      setErrorMessage("Failed to approve appointment. Please try again.");
-      setTimeout(() => setErrorMessage(null), 5000);
-    }
-  };
-
-  const handleRejectAppointment = async (appointment: Appointment) => {
-    if (appointment.status !== "pending") return;
-    const db = getDatabase();
-    const pendingRef = ref(db, `pendingAppointments/${appointment.id}`);
-    const patientApptRef = ref(db, `patients/${appointment.patientId}/appointments/${appointment.id}`);
-
-    try {
-      await set(patientApptRef, { ...appointment, status: "rejected" });
-      await remove(pendingRef);
-      setAppointments(prev => prev.filter(appt => appt.id !== appointment.id));
-      const patientName = patients[appointment.patientId]?.name || "Unknown Patient";
-      addNotification(
-        appointment.patientId,
-        `Your appointment with Dr. ${doctorData.name} on ${appointment.date} at ${appointment.startTime} was rejected due to schedule conflict.`,
-        "appointment",
-        appointment.id
-      );
-    } catch (error) {
-      setErrorMessage("Failed to reject appointment. Please try again.");
-      try { await set(patientApptRef, { ...appointment, status: "pending" }); } catch {}
-      setTimeout(() => setErrorMessage(null), 5000);
+    if (notif) {
+      set(notifRef, { ...notif, read: true });
     }
   };
 
@@ -353,18 +306,22 @@ export default function DoctorDashboard() {
     } catch (error) {
       console.error("Logout failed:", error);
       setLoading(false);
-      setErrorMessage("Failed to log out. Please try again.");
-      setTimeout(() => setErrorMessage(null), 5000);
+      alert("Failed to log out. Please try again.");
     }
   };
 
-  const isOngoing = (appointmentTime: string): boolean => {
-    if (!appointmentTime) return false;
-    const [hours, minutes] = appointmentTime.split(":").map(Number);
-    const now = new Date();
-    const apptStart = new Date(now); apptStart.setHours(hours, minutes, 0, 0);
-    const apptEnd = new Date(apptStart.getTime() + 30 * 60 * 1000); // Assuming 30-min slots
-    return now >= apptStart && now <= apptEnd;
+  const isChatTimeValid = (chat: Chat): boolean => {
+    try {
+      const appointmentTime = new Date(chat.appointmentTime).getTime();
+      const endTimeStr = chat.endTime
+        ? `${chat.appointmentTime.split(" ")[0]}T${chat.endTime}:00`
+        : new Date(appointmentTime + 30 * 60 * 1000).toISOString();
+      const endTime = new Date(endTimeStr).getTime();
+      const currentTime = Date.now();
+      return currentTime >= appointmentTime && currentTime <= endTime && chat.status === "confirmed";
+    } catch (e) {
+      return false;
+    }
   };
 
   const handleProfileClick = (e: React.MouseEvent) => {
@@ -401,48 +358,77 @@ export default function DoctorDashboard() {
     setIsDragging(false);
   };
 
-  const handleChatClick = (chatId: string, active: boolean) => (e: React.MouseEvent) => {
+  const handleChatClick = (chatId: string, isValid: boolean) => (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (active) {
+    if (isValid) {
       setSelectedChatId(chatId);
       setIsChatOpen(true);
     }
   };
 
+  const requestMediaPermissions = async (): Promise<MediaStream | null> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setMediaStream(stream);
+      return stream;
+    } catch (error) {
+      console.error("Failed to get media permissions:", error);
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        setErrorMessage("Camera and microphone permissions are required to start a video call.");
+      } else {
+        setErrorMessage("An error occurred while accessing media devices.");
+      }
+      return null;
+    }
+  };
+
+  const resetVideoCallState = (chatId: string) => {
+    const db = getDatabase();
+    const chatRef = ref(db, `chats/${chatId}/videoCallInitiated`);
+    set(chatRef, false).catch((error) => {
+      console.error(`Failed to reset videoCallInitiated for chat ID: ${chatId}`, error);
+    });
+  };
+
   const handleVideoCallClick = (chat: Chat) => async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (chat.active) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setMediaStream(stream);
+    if (isChatTimeValid(chat)) {
+      const stream = await requestMediaPermissions();
+      if (stream) {
         setSelectedVideoChat(chat);
         setIsVideoCallOpen(true);
+
         const db = getDatabase();
         const chatRef = ref(db, `chats/${chat.id}/videoCallInitiated`);
-        await set(chatRef, true);
-        const messaging = getMessaging();
-        getToken(messaging).then(token => {
-          fetch("/api/send-fcm", {
-            method: "POST",
-            body: JSON.stringify({ token, message: { data: { chatId: chat.id, type: "videoCallInitiated" } } }),
-          });
-        }).catch(error => console.error("FCM token error:", error));
-      } catch (error) {
-        console.error("Failed to start video call:", error);
-        setErrorMessage("Failed to access camera/microphone. Please check permissions and try again.");
+        set(chatRef, true).catch((error) => {
+          console.error(`Failed to initiate video call for chat ID: ${chat.id}`, error);
+          setErrorMessage("Failed to start the video call. Please try again.");
+          setIsVideoCallOpen(false);
+          resetVideoCallState(chat.id);
+          if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            setMediaStream(null);
+          }
+        });
+      } else {
         setTimeout(() => setErrorMessage(null), 5000);
       }
+    } else {
+      setErrorMessage("Video call is only available during the appointment time.");
+      setTimeout(() => setErrorMessage(null), 5000);
     }
   };
 
   const handleVideoCallClose = () => {
-    if (selectedVideoChat) {
-      const db = getDatabase();
-      set(ref(db, `chats/${selectedVideoChat.id}/videoCallInitiated`), false);
-    }
+    if (selectedVideoChat) resetVideoCallState(selectedVideoChat.id);
     setIsVideoCallOpen(false);
-    if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-    setMediaStream(null);
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => {
+        track.stop();
+        track.enabled = false;
+      });
+      setMediaStream(null);
+    }
   };
 
   useEffect(() => {
@@ -455,9 +441,11 @@ export default function DoctorDashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isMenuOpen]);
 
-  const filteredChats = chats.filter(chat =>
-    patients[chat.patientId]?.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredChats = chats.filter((chat) => {
+    const patient = patients[chat.patientId];
+    const patientName = patient?.name || "Unknown Patient";
+    return patientName.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   if (loading) {
     return (
@@ -610,6 +598,7 @@ export default function DoctorDashboard() {
                   {viewMode === "list" ? "Calendar View" : "List View"}
                 </button>
               </div>
+
               {viewMode === "list" ? (
                 appointments.length === 0 ? (
                   <p className="text-gray-400">No upcoming appointments scheduled.</p>
@@ -622,62 +611,46 @@ export default function DoctorDashboard() {
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
                   >
-                    {appointments.map((appointment) => (
-                      <motion.div
-                        key={appointment.id}
-                        className="min-w-[250px] bg-gray-900/50 backdrop-blur-md shadow-lg rounded-lg p-4 border border-gray-700/50"
-                        whileHover={{ scale: 1.02 }}
-                      >
-                        <h3 className="text-lg font-semibold text-gray-200">
-                          {patients[appointment.patientId]?.name || "Unknown Patient"}
-                        </h3>
-                        <p className="text-sm text-gray-400 flex items-center">
-                          <MdEvent className="mr-2" /> {appointment.date}
-                        </p>
-                        <p className="text-sm text-gray-400 flex items-center">
-                          <MdAccessTime className="mr-2" /> {appointment.startTime} - {appointment.endTime}
-                        </p>
-                        {patients[appointment.patientId] && (
-                          <>
-                            <p className="text-sm text-gray-400 flex items-center">
-                              <MdPhone className="mr-2" /> {patients[appointment.patientId].contactNumber || "N/A"}
-                            </p>
-                            <p className="text-sm text-gray-400 flex items-center">
-                              <MdEmail className="mr-2" /> {patients[appointment.patientId].email || "N/A"}
-                            </p>
-                          </>
-                        )}
-                        <div className="flex items-center mt-2 space-x-2">
+                    {appointments.map((appointment) => {
+                      const patient = patients[appointment.patientId];
+                      return (
+                        <motion.div
+                          key={appointment.id}
+                          className="min-w-[250px] bg-gray-900/50 backdrop-blur-md shadow-lg rounded-lg p-4 border border-gray-700/50"
+                          whileHover={{ scale: 1.02 }}
+                        >
+                          <h3 className="text-lg font-semibold text-gray-200">
+                            {patient?.name || "Unknown Patient"}
+                          </h3>
+                          <p className="text-sm text-gray-400 flex items-center">
+                            <MdEvent className="mr-2" /> {appointment.date}
+                          </p>
+                          <p className="text-sm text-gray-400 flex items-center">
+                            <MdAccessTime className="mr-2" /> {appointment.startTime} -{" "}
+                            {appointment.endTime}
+                          </p>
+                          {patient && (
+                            <>
+                              <p className="text-sm text-gray-400 flex items-center">
+                                <MdPhone className="mr-2" /> {patient.contactNumber || "N/A"}
+                              </p>
+                              <p className="text-sm text-gray-400 flex items-center">
+                                <MdEmail className="mr-2" /> {patient.email || "N/A"}
+                              </p>
+                            </>
+                          )}
                           <span
-                            className={`px-3 py-1 inline-block rounded-full text-sm ${
+                            className={`px-3 py-1 mt-2 inline-block rounded-full text-sm ${
                               appointment.status === "confirmed"
                                 ? "bg-green-900/50 text-green-300"
-                                : appointment.status === "ongoing"
-                                ? "bg-blue-900/50 text-blue-300"
                                 : "bg-yellow-900/50 text-yellow-300"
                             }`}
                           >
                             {appointment.status}
                           </span>
-                          {appointment.status === "pending" && (
-                            <>
-                              <button
-                                onClick={() => handleApproveAppointment(appointment)}
-                                className="px-3 py-1 bg-green-600 text-white rounded-full text-sm hover:bg-green-700 transition-colors"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => handleRejectAppointment(appointment)}
-                                className="px-3 py-1 bg-red-600 text-white rounded-full text-sm hover:bg-red-700 transition-colors"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </motion.div>
-                    ))}
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 )
               ) : (
@@ -703,7 +676,7 @@ export default function DoctorDashboard() {
                       {doctorData.selectedTimeSlots
                         ?.filter((slot: any) => slot.day === day)
                         .map((slot: any, index: number) => (
-                          <p key={`${day}-${index}`}>
+                          <p key={index}>
                             {slot.startTime} - {slot.endTime}
                           </p>
                         ))}
@@ -727,53 +700,53 @@ export default function DoctorDashboard() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              {chatLoading ? (
-                <div className="flex justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
-                </div>
-              ) : filteredChats.length === 0 ? (
-                <p className="text-gray-400">No active chats.</p>
-              ) : (
-                <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                  {filteredChats.map((chat) => (
-                    <motion.div
-                      key={chat.id}
-                      className={`p-4 rounded-lg flex justify-between items-center ${
-                        chat.active ? "bg-gray-900/50 hover:bg-gray-900/70 cursor-pointer" : "bg-gray-700/50 cursor-not-allowed opacity-50"
-                      } border border-gray-700/50`}
-                      whileHover={{ scale: chat.active ? 1.02 : 1 }}
-                      onClick={handleChatClick(chat.id, chat.active)}
-                    >
-                      <div>
-                        <p className="font-semibold text-gray-200">
-                          {patients[chat.patientId]?.name || "Unknown Patient"}
-                        </p>
-                        <p className="text-sm text-gray-400">{chat.lastMessage}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(chat.lastMessageTime).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {chat.unreadCount > 0 && (
-                          <span className="bg-red-500 text-white rounded-full px-2 py-1 text-xs">
-                            {chat.unreadCount}
-                          </span>
-                        )}
-                        {chat.active && isOngoing(chat.appointmentTime) && (
-                          <motion.button
-                            onClick={handleVideoCallClick(chat)}
-                            className="text-indigo-400 hover:text-indigo-300 transition-colors"
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                          >
-                            <MdVideoCall size={24} />
-                          </motion.button>
-                        )}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
+              <div className="space-y-4 max-h-[400px] overflow-y-auto">
+                {filteredChats
+                  .sort((a, b) => b.lastMessageTime - a.lastMessageTime)
+                  .map((chat) => {
+                    const patient = patients[chat.patientId];
+                    const patientName = patient?.name || "Unknown Patient";
+                    const isValid = isChatTimeValid(chat);
+                    return (
+                      <motion.div
+                        key={chat.id}
+                        className={`p-4 rounded-lg flex justify-between items-center ${
+                          isValid
+                            ? "bg-gray-900/50 hover:bg-gray-900/70 cursor-pointer"
+                            : "bg-gray-700/50 cursor-not-allowed opacity-50"
+                        } border border-gray-700/50`}
+                        whileHover={{ scale: isValid ? 1.02 : 1 }}
+                        onClick={handleChatClick(chat.id, isValid)}
+                      >
+                        <div>
+                          <p className="font-semibold text-gray-200">{patientName}</p>
+                          <p className="text-sm text-gray-400">{chat.lastMessage}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(chat.lastMessageTime).toLocaleString()}
+                            {chat.appointmentTime && ` | ${chat.appointmentTime}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {chat.unreadCount > 0 && (
+                            <span className="bg-red-500 text-white rounded-full px-2 py-1 text-xs">
+                              {chat.unreadCount}
+                            </span>
+                          )}
+                          {isValid && (
+                            <motion.button
+                              onClick={handleVideoCallClick(chat)}
+                              className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <MdVideoCall size={24} />
+                            </motion.button>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+              </div>
             </div>
 
             <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
@@ -863,16 +836,18 @@ export default function DoctorDashboard() {
           <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
             <h2 className="text-xl font-semibold text-indigo-200 mb-4">Tasks</h2>
             <ul className="space-y-2">
-              {[
-                "Follow up with Patient A",
-                "Review lab results for Patient B",
-                "Prepare prescription for Patient C",
-              ].map((task, index) => (
-                <li key={`task-${index}`} className="flex items-center text-gray-400">
-                  <MdTask className="text-indigo-400 mr-2" />
-                  <span>{task}</span>
-                </li>
-              ))}
+              <li className="flex items-center text-gray-400">
+                <MdTask className="text-indigo-400 mr-2" />
+                <span>Follow up with Patient A</span>
+              </li>
+              <li className="flex items-center text-gray-400">
+                <MdTask className="text-indigo-400 mr-2" />
+                <span>Review lab results for Patient B</span>
+              </li>
+              <li className="flex items-center text-gray-400">
+                <MdTask className="text-indigo-400 mr-2" />
+                <span>Prepare prescription for Patient C</span>
+              </li>
             </ul>
           </div>
         </div>
@@ -904,9 +879,10 @@ export default function DoctorDashboard() {
             chatId={selectedVideoChat.id}
             doctorId={selectedVideoChat.doctorId}
             patientId={selectedVideoChat.patientId}
-            doctorName={doctorData.name}
+            doctorName={selectedVideoChat.doctorName}
             patientName={patients[selectedVideoChat.patientId]?.name || "Unknown Patient"}
             appointmentTime={selectedVideoChat.appointmentTime}
+            endTime={selectedVideoChat.endTime}
             doctorProfilePicture={doctorData?.profilePicture}
             mediaStream={mediaStream}
             onClose={handleVideoCallClose}
@@ -919,17 +895,41 @@ export default function DoctorDashboard() {
               <div>
                 <h3 className="font-semibold text-indigo-200">Product</h3>
                 <ul className="mt-2 space-y-1">
-                  <li><a href="#" className="hover:text-indigo-300 transition-colors">Home</a></li>
-                  <li><a href="#" className="hover:text-indigo-300 transition-colors">About</a></li>
-                  <li><a href="#" className="hover:text-indigo-300 transition-colors">Blog</a></li>
-                  <li><a href="#" className="hover:text-indigo-300 transition-colors">Contact Us</a></li>
+                  <li>
+                    <a href="#" className="hover:text-indigo-300 transition-colors">
+                      Home
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#" className="hover:text-indigo-300 transition-colors">
+                      About
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#" className="hover:text-indigo-300 transition-colors">
+                      Blog
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#" className="hover:text-indigo-300 transition-colors">
+                      Contact Us
+                    </a>
+                  </li>
                 </ul>
               </div>
               <div>
                 <h3 className="font-semibold text-indigo-200">Legal Details</h3>
                 <ul className="mt-2 space-y-1">
-                  <li><a href="#" className="hover:text-indigo-300 transition-colors">Privacy Policy</a></li>
-                  <li><a href="#" className="hover:text-indigo-300 transition-colors">Terms and Conditions</a></li>
+                  <li>
+                    <a href="#" className="hover:text-indigo-300 transition-colors">
+                      Privacy Policy
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#" className="hover:text-indigo-300 transition-colors">
+                      Terms and Conditions
+                    </a>
+                  </li>
                 </ul>
               </div>
               <div>
@@ -938,13 +938,17 @@ export default function DoctorDashboard() {
                 <p>+91 900 2841 677</p>
                 <p>contact@healthmate.in</p>
                 <div className="flex space-x-4 mt-2">
-                  <a href="#" className="hover:text-indigo-300 transition-colors"><MdPhone /></a>
-                  <a href="#" className="hover:text-indigo-300 transition-colors"><MdEmail /></a>
+                  <a href="#" className="hover:text-indigo-300 transition-colors">
+                    <MdPhone />
+                  </a>
+                  <a href="#" className="hover:text-indigo-300 transition-colors">
+                    <MdEmail />
+                  </a>
                 </div>
               </div>
             </div>
             <div className="text-center mt-6">
-              <p className="text-sm">© 2025 Healthmate. All Rights Reserved.</p>
+              <p className="text-sm">© 2024 Healthmate. All Rights Reserved.</p>
             </div>
           </div>
         </footer>

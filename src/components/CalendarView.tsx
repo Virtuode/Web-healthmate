@@ -1,19 +1,21 @@
+// src/components/CalendarView.tsx
 "use client";
 
 import { useState, useMemo } from "react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameDay, parseISO } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameDay } from "date-fns";
 import { motion } from "framer-motion";
 import Image from "next/image";
 
 interface Appointment {
   id: string;
   patientId: string;
-  date: string;
+  date: string; // May be invalid like "15-10-0008"
   timeSlot: string;
   status: string;
   doctorId: string;
   endTime: string;
   startTime: string;
+  timestamp?: number; // Added for fallback
 }
 
 interface Patient {
@@ -40,11 +42,25 @@ const CalendarView: React.FC<CalendarViewProps> = ({ appointments, patients, doc
     return eachDayOfInterval({ start, end });
   }, [currentMonth]);
 
-  // Map appointments to dates
+  // Map appointments to dates using normalized date from timestamp if date is invalid
   const appointmentsByDate = useMemo(() => {
     const map: { [key: string]: Appointment[] } = {};
     appointments.forEach((appt) => {
-      const dateStr = appt.date;
+      let dateStr: string;
+      try {
+        // Try parsing the date field
+        const parsedDate = new Date(`${appt.date}T${appt.startTime}:00`);
+        if (isNaN(parsedDate.getTime())) {
+          // If invalid, use timestamp
+          dateStr = format(new Date(appt.timestamp || Date.now()), "yyyy-MM-dd");
+        } else {
+          dateStr = format(parsedDate, "yyyy-MM-dd");
+        }
+      } catch (e) {
+        console.warn(`Invalid date for appointment ${appt.id}: ${appt.date}`, e);
+        // Fallback to timestamp
+        dateStr = format(new Date(appt.timestamp || Date.now()), "yyyy-MM-dd");
+      }
       if (!map[dateStr]) map[dateStr] = [];
       map[dateStr].push(appt);
     });

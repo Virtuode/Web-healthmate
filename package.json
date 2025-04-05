@@ -19,6 +19,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.5.0",
+    "react-tooltip": "^5.28.0",
     "zego-express-engine-webrtc": "^3.8.0",
     "zego-zim-web": "^2.16.0"
   },
