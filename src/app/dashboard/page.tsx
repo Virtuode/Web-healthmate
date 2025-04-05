@@ -1,4 +1,3 @@
-// app/dashboard/page.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -11,20 +10,19 @@ import ChatComponent from "@/components/ChatComponent";
 import HamburgerMenu from "@/components/HamburgerMenu";
 import CalendarView from "@/components/CalendarView";
 import dynamic from "next/dynamic";
-
 import { MdEvent, MdAccessTime, MdPhone, MdEmail, MdSearch, MdNotifications, MdEdit, MdCalendarToday, MdAnalytics, MdTask, MdVideoCall, MdClose } from "react-icons/md";
 import { motion } from "framer-motion";
 
 const VideoCallComponent = dynamic(() => import("@/components/UI/VideoCallComponent"), {
-  ssr: false, // Ensures it only loads on the client
+  ssr: false,
 });
 
 interface Chat {
   id: string;
   isActive: boolean;
   appointmentId: string;
-  appointmentTime: string; // "yyyy-MM-dd HH:mm"
-  endTime?: string; // "HH:mm"
+  appointmentTime: string;
+  endTime?: string;
   doctorId: string;
   doctorImageUrl: string;
   doctorName: string;
@@ -48,7 +46,7 @@ interface Appointment {
   endTime: string;
   createdAt?: number;
   consultationType?: string;
-  timestamp?: number; // Added for fallback
+  timestamp?: number;
 }
 
 interface Patient {
@@ -63,8 +61,17 @@ interface Notification {
   message: string;
   timestamp: number;
   read: boolean;
-  type: "appointment" | "message" | "system";
+  type: "appointment" | "message" | "system" | "task";
   relatedId?: string;
+}
+
+interface Task {
+  id: string;
+  description: string;
+  patientId: string | null; // Explicitly string | null, no undefined
+  timestamp: number;
+  completed: boolean;
+  dueDate: string | null;
 }
 
 export default function DoctorDashboard() {
@@ -73,6 +80,7 @@ export default function DoctorDashboard() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<{ [key: string]: Patient }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -94,6 +102,12 @@ export default function DoctorDashboard() {
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Task enhancement states
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "today" | "completed" | "pending">("all");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (!user) {
@@ -106,11 +120,16 @@ export default function DoctorDashboard() {
       const patientsRef = ref(db, "patients");
       const notificationsRef = ref(db, `notifications/doctors/${user.uid}`);
       const appointmentsRef = ref(db, `doctors/${user.uid}/appointments`);
+      const tasksRef = ref(db, `doctors/${user.uid}/tasks`);
 
       onValue(doctorRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          setDoctorData(data);
+          setDoctorData({
+            ...data,
+            availableDays: Array.isArray(data.availableDays) ? data.availableDays : data.availableDays ? [data.availableDays] : [],
+            selectedTimeSlots: Array.isArray(data.selectedTimeSlots) ? data.selectedTimeSlots : [],
+          });
           setGreetingState("slide-down");
           setTimeout(() => setGreetingState("slide-up"), 3000);
           setTimeout(() => setGreetingState("hidden"), 3500);
@@ -132,7 +151,7 @@ export default function DoctorDashboard() {
             endTime: appt.endTime,
             createdAt: appt.createdAt || Date.now(),
             consultationType: appt.consultationType,
-            timestamp: appt.timestamp, // Include timestamp for fallback
+            timestamp: appt.timestamp,
           }));
 
           const filteredAppts = rawAppts.filter((appt) => {
@@ -140,15 +159,13 @@ export default function DoctorDashboard() {
             try {
               apptDate = new Date(`${appt.date}T${appt.startTime}:00`);
               if (isNaN(apptDate.getTime())) {
-                // Fallback to timestamp if date is invalid
                 apptDate = new Date(appt.timestamp || Date.now());
               }
             } catch (e) {
               console.warn(`Invalid date for appointment ${appt.id}: ${appt.date}`, e);
-              apptDate = new Date(appt.timestamp || Date.now()); // Use timestamp as fallback
+              apptDate = new Date(appt.timestamp || Date.now());
             }
             const currentTime = Date.now();
-            // Show appointments from today onward (past 24 hours included)
             return apptDate.getTime() > currentTime - 24 * 60 * 60 * 1000;
           });
 
@@ -166,7 +183,7 @@ export default function DoctorDashboard() {
           }
           setAppointments(filteredAppts);
         } else {
-          setAppointments([]); // Ensure empty array if no data
+          setAppointments([]);
         }
       });
 
@@ -192,17 +209,6 @@ export default function DoctorDashboard() {
               unreadCount: chat.unreadCount ?? 0,
               videoCallInitiated: chat.videoCallInitiated ?? false,
             }));
-
-          // Optional: Limit to one chat per patient (uncomment if desired)
-          /*
-          const groupedChats = doctorChats.reduce((acc, chat) => {
-            if (!acc[chat.patientId] || acc[chat.patientId].lastMessageTime < chat.lastMessageTime) {
-              acc[chat.patientId] = chat;
-            }
-            return acc;
-          }, {} as { [key: string]: Chat });
-          setChats(Object.values(groupedChats));
-          */
           setChats(doctorChats);
         }
       });
@@ -240,6 +246,25 @@ export default function DoctorDashboard() {
             relatedId: notif.relatedId,
           }));
           setNotifications(notifList);
+        } else {
+          setNotifications([]);
+        }
+      });
+
+      onValue(tasksRef, (snapshot) => {
+        const tasksData = snapshot.val();
+        if (tasksData) {
+          const taskList = Object.entries(tasksData).map(([id, task]: [string, any]) => ({
+            id,
+            description: task.description,
+            patientId: task.patientId !== undefined ? task.patientId : null, // Normalize to null if undefined
+            timestamp: task.timestamp,
+            completed: task.completed || false,
+            dueDate: task.dueDate || null,
+          }));
+          setTasks(taskList);
+        } else {
+          setTasks([]);
         }
       });
 
@@ -250,6 +275,7 @@ export default function DoctorDashboard() {
         off(patientsRef);
         off(notificationsRef);
         off(appointmentsRef);
+        off(tasksRef);
         if (mediaStream) {
           mediaStream.getTracks().forEach(track => {
             track.stop();
@@ -299,6 +325,7 @@ export default function DoctorDashboard() {
       setAppointments([]);
       setPatients({});
       setNotifications([]);
+      setTasks([]);
       setSelectedChatId(null);
       setIsChatOpen(false);
       setIsMenuOpen(false);
@@ -430,6 +457,50 @@ export default function DoctorDashboard() {
       setMediaStream(null);
     }
   };
+
+  const toggleTaskCompletion = (taskId: string) => {
+    const db = getDatabase();
+    const taskRef = ref(db, `doctors/${auth.currentUser?.uid}/tasks/${taskId}`);
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      const updatedTask = {
+        description: task.description,
+        patientId: task.patientId !== undefined ? task.patientId : null, // Ensure no undefined
+        timestamp: task.timestamp,
+        completed: !task.completed,
+        dueDate: task.dueDate || null,
+      };
+      set(taskRef, updatedTask).catch((error) => {
+        console.error("Failed to update task:", error);
+      });
+    }
+  };
+
+  const addTask = () => {
+    if (!newTaskDescription.trim()) return;
+    const db = getDatabase();
+    const tasksRef = ref(db, `doctors/${auth.currentUser?.uid}/tasks`);
+    const newTaskRef = push(tasksRef);
+    set(newTaskRef, {
+      description: newTaskDescription,
+      patientId: selectedPatientId || null,
+      timestamp: Date.now(),
+      completed: false,
+      dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0], // Default to tomorrow
+    });
+    setNewTaskDescription("");
+    setSelectedPatientId(null);
+  };
+
+  const filteredTasks = tasks.filter((task) => {
+    if (filter === "today") {
+      const today = new Date().toISOString().split("T")[0];
+      return task.dueDate === today;
+    }
+    if (filter === "completed") return task.completed;
+    if (filter === "pending") return !task.completed;
+    return true;
+  });
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -685,6 +756,91 @@ export default function DoctorDashboard() {
                 ))}
               </div>
             </div>
+
+            <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
+              <h2 className="text-xl font-semibold text-indigo-200 mb-4">Tasks</h2>
+              <div className="mb-4 flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newTaskDescription}
+                    onChange={(e) => setNewTaskDescription(e.target.value)}
+                    placeholder="Enter new task..."
+                    className="flex-1 p-2 rounded-lg bg-gray-900/50 text-white border border-gray-700/50 focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <select
+                    value={selectedPatientId || ""}
+                    onChange={(e) => setSelectedPatientId(e.target.value || null)}
+                    className="p-2 rounded-lg bg-gray-900/50 text-white border border-gray-700/50"
+                  >
+                    <option value="">No Patient</option>
+                    {Object.values(patients).map((patient) => (
+                      <option key={patient.id} value={patient.id}>{patient.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={addTask}
+                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors"
+                  >
+                    Add Task
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setFilter("all")}
+                    className={`px-3 py-1 rounded-lg ${filter === "all" ? "bg-indigo-600" : "bg-gray-700"}`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setFilter("today")}
+                    className={`px-3 py-1 rounded-lg ${filter === "today" ? "bg-indigo-600" : "bg-gray-700"}`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setFilter("completed")}
+                    className={`px-3 py-1 rounded-lg ${filter === "completed" ? "bg-indigo-600" : "bg-gray-700"}`}
+                  >
+                    Completed
+                  </button>
+                  <button
+                    onClick={() => setFilter("pending")}
+                    className={`px-3 py-1 rounded-lg ${filter === "pending" ? "bg-indigo-600" : "bg-gray-700"}`}
+                  >
+                    Pending
+                  </button>
+                </div>
+              </div>
+              {filteredTasks.length === 0 ? (
+                <p className="text-gray-400">No tasks match the current filter.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {filteredTasks.sort((a, b) => a.timestamp - b.timestamp).map((task) => (
+                    <li
+                      key={task.id}
+                      className="flex items-center text-gray-400 cursor-pointer hover:bg-gray-700/50 p-2 rounded"
+                      onClick={() => setSelectedTask(task)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleTaskCompletion(task.id);
+                        }}
+                        className="mr-2 h-4 w-4 text-indigo-600 border-gray-700 rounded focus:ring-indigo-500"
+                      />
+                      <MdTask className="text-indigo-400 mr-2" />
+                      <span className={task.completed ? "line-through text-gray-500" : ""}>
+                        {task.description} {task.patientId && `- ${patients[task.patientId]?.name || "Unknown Patient"}`}
+                        {task.dueDate && ` (Due: ${new Date(task.dueDate).toLocaleDateString()})`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -750,6 +906,52 @@ export default function DoctorDashboard() {
             </div>
 
             <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-indigo-200">
+                  Notifications ({notifications.filter((n) => !n.read).length})
+                </h2>
+                <button
+                  onClick={() => setIsNotificationInboxOpen(!isNotificationInboxOpen)}
+                  className="text-indigo-400 hover:text-indigo-300 transition-colors bg-transparent"
+                >
+                  {isNotificationInboxOpen ? "Collapse" : "Expand"}
+                </button>
+              </div>
+              {isNotificationInboxOpen && (
+                <div className="max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-thumb-indigo-500 scrollbar-track-gray-700">
+                  {notifications.length === 0 ? (
+                    <p className="text-gray-400 text-center">No notifications yet.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {notifications.sort((a, b) => b.timestamp - a.timestamp).map((notif) => (
+                        <li
+                          key={notif.id}
+                          className={`flex items-start p-3 rounded-lg transition-all duration-200 ${
+                            notif.read ? "bg-gray-900/30" : "bg-indigo-900/70 hover:bg-indigo-900/90"
+                          } cursor-pointer`}
+                          onClick={() => !notif.read && markNotificationAsRead(notif.id)}
+                        >
+                          <MdNotifications
+                            className={`mr-3 mt-1 flex-shrink-0 ${notif.read ? "text-gray-400" : "text-yellow-400"}`}
+                            size={20}
+                          />
+                          <div className="flex-1">
+                            <p className={`text-sm ${notif.read ? "text-gray-400" : "text-gray-200 font-medium"}`}>
+                              {notif.message}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(notif.timestamp).toLocaleString()}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
               <h2 className="text-xl font-semibold text-indigo-200 mb-4">Analytics</h2>
               <div className="grid grid-cols-1 gap-4">
                 <div className="text-center p-4 bg-gray-900/50 rounded-lg shadow border border-gray-700/50">
@@ -769,53 +971,6 @@ export default function DoctorDashboard() {
                 </div>
               </div>
             </div>
-
-            <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-indigo-200">
-                  Notifications ({notifications.filter((n) => !n.read).length})
-                </h2>
-                <button
-                  onClick={() => setIsNotificationInboxOpen(!isNotificationInboxOpen)}
-                  className="text-indigo-400 hover:text-indigo-300 transition-colors bg-transparent"
-                >
-                  {isNotificationInboxOpen ? "Collapse" : "Expand"}
-                </button>
-              </div>
-              {isNotificationInboxOpen && (
-                <div className="max-h-[300px] overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <p className="text-gray-400">No notifications yet.</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {notifications
-                        .sort((a, b) => b.timestamp - a.timestamp)
-                        .map((notif) => (
-                          <li
-                            key={notif.id}
-                            className={`flex items-center p-2 rounded-lg ${
-                              notif.read ? "bg-gray-900/30" : "bg-indigo-900/50"
-                            } cursor-pointer`}
-                            onClick={() => !notif.read && markNotificationAsRead(notif.id)}
-                          >
-                            <MdNotifications
-                              className={`mr-2 ${notif.read ? "text-gray-400" : "text-yellow-400"}`}
-                            />
-                            <div>
-                              <p className={notif.read ? "text-gray-400" : "text-gray-200"}>
-                                {notif.message}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {new Date(notif.timestamp).toLocaleString()}
-                              </p>
-                            </div>
-                          </li>
-                        ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
@@ -832,25 +987,40 @@ export default function DoctorDashboard() {
             </div>
             <p className="text-gray-400">{doctorData.biography || "No biography available."}</p>
           </div>
-
-          <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg p-6 border border-gray-700/50">
-            <h2 className="text-xl font-semibold text-indigo-200 mb-4">Tasks</h2>
-            <ul className="space-y-2">
-              <li className="flex items-center text-gray-400">
-                <MdTask className="text-indigo-400 mr-2" />
-                <span>Follow up with Patient A</span>
-              </li>
-              <li className="flex items-center text-gray-400">
-                <MdTask className="text-indigo-400 mr-2" />
-                <span>Review lab results for Patient B</span>
-              </li>
-              <li className="flex items-center text-gray-400">
-                <MdTask className="text-indigo-400 mr-2" />
-                <span>Prepare prescription for Patient C</span>
-              </li>
-            </ul>
-          </div>
         </div>
+
+        {selectedTask && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            onClick={() => setSelectedTask(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="bg-gray-800 rounded-lg p-6 w-96 border border-gray-700/50"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-xl font-semibold text-indigo-200 mb-4">Task Details</h3>
+              <p><strong>Description:</strong> {selectedTask.description}</p>
+              {selectedTask.patientId && (
+                <p><strong>Patient:</strong> {patients[selectedTask.patientId]?.name || "Unknown"}</p>
+              )}
+              <p><strong>Created:</strong> {new Date(selectedTask.timestamp).toLocaleString()}</p>
+              {selectedTask.dueDate && (
+                <p><strong>Due:</strong> {new Date(selectedTask.dueDate).toLocaleDateString()}</p>
+              )}
+              <p><strong>Status:</strong> {selectedTask.completed ? "Completed" : "Pending"}</p>
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="mt-4 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600"
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
 
         {isChatOpen && selectedChatId && (
           <ChatComponent
