@@ -173,7 +173,7 @@ export default function DoctorDashboard() {
             (appt) =>
               appt.createdAt > lastSeenTimestamp && !appointments.some((a) => a.id === appt.id)
           );
-          if (newAppt && patients[newAppt.patientId] && !document.hasFocus()) {
+          if (newAppt && patients[newAppt.patientId]) { // Removed !document.hasFocus()
             const patientName = patients[newAppt.patientId]?.name || "Unknown Patient";
             const notifMessage = `New appointment with ${patientName} on ${newAppt.date} at ${newAppt.startTime} for ${newAppt.consultationType || "consultation"}`;
             addNotification(user.uid, notifMessage, "appointment", newAppt.id);
@@ -774,9 +774,13 @@ export default function DoctorDashboard() {
                     className="p-2 rounded-lg bg-gray-900/50 text-white border border-gray-700/50"
                   >
                     <option value="">No Patient</option>
-                    {Object.values(patients).map((patient) => (
-                      <option key={patient.id} value={patient.id}>{patient.name}</option>
-                    ))}
+                      {Object.values(patients)
+                      .filter((patient) => 
+                        appointments.some((appt) => appt.patientId === patient.id)
+                      )
+                      .map((patient) => (
+                        <option key={patient.id} value={patient.id}>{patient.name}</option>
+                      ))}
                   </select>
                   <button
                     onClick={addTask}

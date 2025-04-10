@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, deleteUser as firebaseDeleteUser } from "firebase/auth"; // Import deleteUser
 import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
 
@@ -11,7 +11,6 @@ const firebaseConfig = {
   storageBucket: "healthmate-01.appspot.com",
   messagingSenderId: "24883277407",
   appId: "1:24883277407:web:ccbfea7dc7f94a73d1b5ea",
-
 };
 
 // Initialize Firebase
@@ -20,5 +19,5 @@ const auth = getAuth(app);
 const db = getDatabase(app);
 const storage = getStorage(app);
 
-export { auth, db }; 
-export {storage};
+// Export everything, including deleteUser
+export { auth, db, storage, firebaseDeleteUser as deleteUser };
